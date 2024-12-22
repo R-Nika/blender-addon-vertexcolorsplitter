@@ -5,7 +5,7 @@ Overview
 --------
 This Blender addon is designed to help with the process of separating meshes by their vertex color,
 which is particularly useful for **Stormworks modding**. The addon automatically splits a mesh into
-multiple objects based on their vertex colors and offers options for additional optimization.
+multiple objects based on their vertex colors and has options for additional optimization.
 
 ## Features
 --------
