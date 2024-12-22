@@ -3,10 +3,10 @@ import bmesh
 
 bl_info = {
     "name": "Separate by Vertex Color",
-    "blender": (3, 6, 0),  # Update this to your Blender version
+    "blender": (3, 6, 0),
     "category": "Object",
     "author": "Nika.",
-    "version": (1, 0, 2),
+    "version": (1, 0, 3),
     "description": "Separates mesh into objects based on vertex color.",
     "support": "COMMUNITY",
     "warning": "",
@@ -151,33 +151,37 @@ class OBJECT_OT_separate_by_vertex_color(bpy.types.Operator):
                 self.report({'INFO'}, f"Triangulated {new_obj.name}")
 
         # Split faces by edges if Edge Split option is enabled
-        if context.scene.edge_split:
+        if bpy.context.scene.edge_split:
             for new_obj in created_objects:
-                bpy.context.view_layer.objects.active = new_obj  # Set the new object as active
-
-                # Ensure we're in object mode before applying the split
+                # Ensure we're in object mode
+                bpy.context.view_layer.objects.active = new_obj
                 bpy.ops.object.mode_set(mode='OBJECT')
 
-                # Create the bmesh to work with edges and faces
+                # Ensure the object is a mesh
+                if new_obj.type != 'MESH':
+                    continue
+
+                # Access the object's mesh data
                 bm = bmesh.new()
                 bm.from_mesh(new_obj.data)
 
-                # Find all edges that should be split
+                # Mark edges for splitting (edges shared by multiple faces)
                 edges_to_split = []
                 for edge in bm.edges:
-                    if edge.is_manifold and not edge.is_boundary:  # Check for manifold edges that aren't boundaries
+                    if len(edge.link_faces) > 1:  # Edge shared by multiple faces
                         edges_to_split.append(edge)
 
-                # If we have edges to split, split faces along those edges
+                # Perform the edge split operation if there are edges to split
                 if edges_to_split:
-                    bmesh.ops.split_edges(bm, edges=edges_to_split, use_verts=True)
+                    bmesh.ops.split_edges(bm, edges=edges_to_split)
+                    bm.to_mesh(new_obj.data)
+                    self.report({'INFO'}, f"Split all edges for {new_obj.name}")
 
-                # Write the updated geometry to the mesh
-                bm.to_mesh(new_obj.data)
+                # Free BMesh resources
                 bm.free()
 
-                # Apply the Edge Split modifier if needed
-                self.report({'INFO'}, f"Split faces by edges for {new_obj.name}")
+        # Update the viewport to reflect changes
+        bpy.context.view_layer.update()
 
         # Hide the original object
         obj.hide_set(True)  # Hide in viewport
@@ -197,7 +201,7 @@ class OBJECT_OT_separate_by_vertex_color(bpy.types.Operator):
                 joined_obj.name = f"{obj.name}_optimized"
 
         self.report({'INFO'}, f"Separated mesh into {len(color_faces)} objects with vertex colors.")
-        bm.free()
+        bm.free()  # Free BMesh resources
         return {'FINISHED'}
 
 class VIEW3D_PT_separate_by_vertex_color_panel(bpy.types.Panel):
@@ -233,81 +237,38 @@ class VIEW3D_PT_separate_by_vertex_color_panel(bpy.types.Panel):
         box.label(text="Post-Processing Options")
         box.prop(scene, "triangulate", text="Triangulate")
         box.prop(scene, "edge_split", text="Edge Split")
-        if scene.edge_split:
-            box.prop(scene, "edge_split_angle", text="Edge Split Angle")
-
-        # Join Objects Option
-        box = layout.box()
-        box.label(text="Join Objects After Separation")
         box.prop(scene, "join_objects", text="Join Objects")
 
-        # Spacer between sections
-        layout.separator()
+# Add properties to the scene
+def add_scene_properties():
+    bpy.types.Scene.merge_by_distance = bpy.props.BoolProperty(name="Merge by Distance", default=False)
+    bpy.types.Scene.merge_distance_threshold = bpy.props.FloatProperty(name="Merge Threshold", default=0.001, min=0.0)
+    bpy.types.Scene.limited_dissolve = bpy.props.BoolProperty(name="Limited Dissolve", default=False)
+    bpy.types.Scene.limited_dissolve_degrees = bpy.props.FloatProperty(name="Dissolve Degrees", default=30.0, min=0.0)
+    bpy.types.Scene.triangulate = bpy.props.BoolProperty(name="Triangulate", default=False)
+    bpy.types.Scene.edge_split = bpy.props.BoolProperty(name="Edge Split", default=False)
+    bpy.types.Scene.join_objects = bpy.props.BoolProperty(name="Join Objects", default=False)
 
-def register():
-    bpy.utils.register_class(OBJECT_OT_separate_by_vertex_color)
-    bpy.utils.register_class(VIEW3D_PT_separate_by_vertex_color_panel)
-
-    # Add properties to the scene for the new options
-    bpy.types.Scene.merge_by_distance = bpy.props.BoolProperty(
-        name="Merge by Distance", 
-        description="Enable merging vertices by distance before separating by vertex color", 
-        default=False
-    )
-    bpy.types.Scene.merge_distance_threshold = bpy.props.FloatProperty(
-        name="Merge Distance Threshold", 
-        description="Threshold for merging vertices by distance", 
-        default=0.001, 
-        min=0.0
-    )
-    bpy.types.Scene.limited_dissolve = bpy.props.BoolProperty(
-        name="Limited Dissolve", 
-        description="Enable limited dissolve", 
-        default=False
-    )
-    bpy.types.Scene.limited_dissolve_degrees = bpy.props.FloatProperty(
-        name="Dissolve Degrees", 
-        description="The degree for limited dissolve", 
-        default=1.0, 
-        min=0.0, 
-        max=90.0
-    )
-    bpy.types.Scene.triangulate = bpy.props.BoolProperty(
-        name="Triangulate", 
-        description="Enable triangulation after processing", 
-        default=False
-    )
-    bpy.types.Scene.edge_split = bpy.props.BoolProperty(
-        name="Edge Split", 
-        description="Enable edge splitting after triangulation", 
-        default=False
-    )
-    bpy.types.Scene.edge_split_angle = bpy.props.FloatProperty(
-        name="Edge Split Angle", 
-        description="Angle above which to split edges", 
-        default=0.523599,  # 30 degrees in radians
-        min=0.0, 
-        max=3.14159
-    )
-    bpy.types.Scene.join_objects = bpy.props.BoolProperty(
-        name="Join Objects", 
-        description="Enable to join all separated objects back into one", 
-        default=False
-    )
-
-def unregister():
-    bpy.utils.unregister_class(OBJECT_OT_separate_by_vertex_color)
-    bpy.utils.unregister_class(VIEW3D_PT_separate_by_vertex_color_panel)
-
-    # Remove properties from the scene
+# Remove properties from the scene
+def remove_scene_properties():
     del bpy.types.Scene.merge_by_distance
     del bpy.types.Scene.merge_distance_threshold
     del bpy.types.Scene.limited_dissolve
     del bpy.types.Scene.limited_dissolve_degrees
     del bpy.types.Scene.triangulate
     del bpy.types.Scene.edge_split
-    del bpy.types.Scene.edge_split_angle
     del bpy.types.Scene.join_objects
+
+# Register and Unregister Functions
+def register():
+    bpy.utils.register_class(OBJECT_OT_separate_by_vertex_color)
+    bpy.utils.register_class(VIEW3D_PT_separate_by_vertex_color_panel)
+    add_scene_properties()
+
+def unregister():
+    bpy.utils.unregister_class(OBJECT_OT_separate_by_vertex_color)
+    bpy.utils.unregister_class(VIEW3D_PT_separate_by_vertex_color_panel)
+    remove_scene_properties()
 
 if __name__ == "__main__":
     register()
