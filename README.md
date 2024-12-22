@@ -1,4 +1,4 @@
-Separate by Vertex Color Addon for Blender v3.6 STL
+Separate by Vertex Color Addon for Blender v3.6 LTS
 =========================================
 
 Overview
